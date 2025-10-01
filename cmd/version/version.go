@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	Version   = "v1.0.0-alpha.1"
+	Version   = "v1.0.0-alpha.2"
 	GitCommit = "unknown"
 	GitTag    = "unknown"
 	BuildTime = "unknown"
