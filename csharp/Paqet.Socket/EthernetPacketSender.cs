@@ -31,7 +31,7 @@ public sealed class EthernetPacketSender : IDisposable
             AcknowledgmentNumber = ack,
             WindowSize = 65535
         };
-        tcp.AllFlags = BuildFlags(flags);
+        tcp.HeaderData[13] = BuildFlags(flags);
         tcp.PayloadData = payload.ToArray();
 
         var ip = new IPv4Packet(_sourceAddress, destination)
@@ -64,9 +64,9 @@ public sealed class EthernetPacketSender : IDisposable
         _device.Close();
     }
 
-    private static ushort BuildFlags(TcpFlags flags)
+    private static byte BuildFlags(TcpFlags flags)
     {
-        ushort value = 0;
+        byte value = 0;
         if (flags.Fin) value |= 0x01;
         if (flags.Syn) value |= 0x02;
         if (flags.Rst) value |= 0x04;
