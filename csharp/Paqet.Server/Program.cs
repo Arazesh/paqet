@@ -32,6 +32,12 @@ internal static class Program
         var stream = await connection.AcceptStreamAsync();
         await using var __ = stream;
         var header = await ProtocolHeader.ReadAsync(stream);
+        var flags = (IReadOnlyList<TcpFlags>?)null;
+        if (header.Type == Core.ProtocolType.TcpFlags)
+        {
+            flags = header.Flags;
+            header = await ProtocolHeader.ReadAsync(stream);
+        }
         if (header.Type == Core.ProtocolType.Tcp && header.Address is not null)
         {
             await HandleTcpAsync(stream, header.Address);

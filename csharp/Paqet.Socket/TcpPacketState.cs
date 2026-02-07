@@ -8,16 +8,19 @@ public sealed class TcpPacketState
     private uint _seq;
     private uint _ack;
     private uint _ts;
+    private readonly TcpFlagSequence _flags;
 
-    public TcpPacketState(uint initialSeq = 1, uint initialAck = 0)
+    public TcpPacketState(uint initialSeq = 1, uint initialAck = 0, TcpFlagSequence? flags = null)
     {
         _seq = initialSeq;
         _ack = initialAck;
         _ts = (uint)Stopwatch.GetTimestamp();
+        _flags = flags ?? new TcpFlagSequence(new[] { TcpFlagPresets.PshAck });
     }
 
-    public (uint Seq, uint Ack, uint Timestamp) Next(TcpFlags flags, int payloadLength)
+    public (uint Seq, uint Ack, uint Timestamp, TcpFlags Flags) Next(int payloadLength)
     {
+        var flags = _flags.Next();
         var seq = _seq;
         var ack = _ack;
         if (flags.Syn)
@@ -30,7 +33,7 @@ public sealed class TcpPacketState
             _seq += (uint)payloadLength;
         }
         _ts += 1;
-        return (seq, ack, _ts);
+        return (seq, ack, _ts, flags);
     }
 
     public void SetAck(uint ack)

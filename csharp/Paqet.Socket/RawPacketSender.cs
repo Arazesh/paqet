@@ -29,8 +29,7 @@ public sealed class RawPacketSender : IDisposable
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpPacketState state, ReadOnlySpan<byte> payload)
     {
-        var flags = TcpFlagPresets.PshAck;
-        var (seq, ack, ts) = state.Next(flags, payload.Length);
+        var (seq, ack, ts, flags) = state.Next(payload.Length);
         var options = BuildTimestampOptions(ts, ts);
         var tcpHeaderLength = 20 + options.Length;
         var buffer = new byte[20 + tcpHeaderLength + payload.Length];

@@ -62,8 +62,7 @@ public sealed class EthernetPacketSender : IDisposable
 
     public void Send(IPAddress destination, ushort sourcePort, ushort destPort, TcpPacketState state, ReadOnlySpan<byte> payload)
     {
-        var flags = TcpFlagPresets.PshAck;
-        var (seq, ack, _) = state.Next(flags, payload.Length);
+        var (seq, ack, _, flags) = state.Next(payload.Length);
         Send(destination, sourcePort, destPort, flags, seq, ack, payload);
     }
 

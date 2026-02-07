@@ -21,6 +21,7 @@ public static class Forwarders
         using var _ = client;
         await using var connection = await transport.DialAsync(server, cancellationToken).ConfigureAwait(false);
         await using var tunnel = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
+        await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForTcpFlags(new[] { TcpFlagPresets.PshAck }), cancellationToken).ConfigureAwait(false);
         await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForTcp(target), cancellationToken).ConfigureAwait(false);
 
         var network = client.GetStream();
