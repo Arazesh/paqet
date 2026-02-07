@@ -7,5 +7,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Paqet.Core\Paqet.Core.csproj" />
+    <ProjectReference Include="..\Paqet.Transport.Quic\Paqet.Transport.Quic.csproj" />
   </ItemGroup>
 </Project>
