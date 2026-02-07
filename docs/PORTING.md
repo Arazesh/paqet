@@ -1,6 +1,6 @@
 # C# Port Plan (Paqet)
 
-This document describes how to implement Paqet in C# with feature parity (not a 1:1 port), targeting .NET 8+ and Windows/Linux.
+This document describes how to implement Paqet in C# with feature parity (not a 1:1 port), targeting .NET 10 and Windows/Linux.
 
 ## Goals
 - **Client + Server** roles with configuration parity.

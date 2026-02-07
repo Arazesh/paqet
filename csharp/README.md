@@ -3,7 +3,7 @@
 This folder contains the initial scaffold for a C# port of Paqet.
 
 ## Target
-- .NET 8+ (works on Windows/Linux)
+- .NET 10 (works on Windows/Linux)
 - Raw packet manipulation via SharpPcap/Npcap/libpcap
 - KCP transport preferred; QUIC fallback acceptable
 
