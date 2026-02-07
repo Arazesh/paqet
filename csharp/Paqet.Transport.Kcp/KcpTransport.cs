@@ -153,7 +153,7 @@ public sealed class KcpTransport : ITransport
 
     private sealed class KcpSession : IDisposable
     {
-        private readonly Kcp _kcp;
+        private readonly KcpSharp.Kcp _kcp;
         private readonly UdpClient _udp;
         private readonly IPEndPoint _remote;
         private readonly Channel<byte[]> _recv = Channel.CreateUnbounded<byte[]>();
@@ -166,7 +166,7 @@ public sealed class KcpTransport : ITransport
         {
             _udp = udp;
             _remote = remote;
-            _kcp = new Kcp(conv, Output);
+            _kcp = new KcpSharp.Kcp(conv, Output);
             _kcp.NoDelay(1, 10, 2, 1);
             _kcp.WndSize(128, 128);
         }
