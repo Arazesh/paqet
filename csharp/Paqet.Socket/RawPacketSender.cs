@@ -13,7 +13,10 @@ public sealed class RawPacketSender : IDisposable
     {
         _socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.HeaderIncluded, true);
-        _socket.Bind(new IPEndPoint(sourceAddress, 0));
+        if (!IPAddress.Any.Equals(sourceAddress))
+        {
+            _socket.Bind(new IPEndPoint(sourceAddress, 0));
+        }
     }
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpFlags flags, uint seq, uint ack, ReadOnlySpan<byte> payload)
