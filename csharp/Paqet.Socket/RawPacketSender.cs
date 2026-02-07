@@ -7,11 +7,11 @@ namespace Paqet.Socket;
 
 public sealed class RawPacketSender : IDisposable
 {
-    private readonly Socket _socket;
+    private readonly System.Net.Sockets.Socket _socket;
 
     public RawPacketSender(IPAddress sourceAddress)
     {
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
+        _socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.HeaderIncluded, true);
         _socket.Bind(new IPEndPoint(sourceAddress, 0));
     }
