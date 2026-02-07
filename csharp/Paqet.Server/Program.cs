@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Paqet.Core;
-using Paqet.Transport.Quic;
+using Paqet.Transport.Kcp;
 
 namespace Paqet.Server;
 
@@ -16,7 +16,7 @@ internal static class Program
         }
 
         var listen = Address.Parse(args[0]);
-        var transport = new QuicTransport();
+        var transport = new KcpTransport();
         await using var listener = await transport.ListenAsync(listen);
         Console.WriteLine($"Server listening on {listen}");
         while (true)
@@ -32,11 +32,11 @@ internal static class Program
         var stream = await connection.AcceptStreamAsync();
         await using var __ = stream;
         var header = await ProtocolHeader.ReadAsync(stream);
-        if (header.Type == Core.ProtocolType.Tcp && header.Address is not null)
+        if (header.Type == ProtocolType.Tcp && header.Address is not null)
         {
             await HandleTcpAsync(stream, header.Address);
         }
-        else if (header.Type == Core.ProtocolType.Udp && header.Address is not null)
+        else if (header.Type == ProtocolType.Udp && header.Address is not null)
         {
             await HandleUdpAsync(stream);
         }

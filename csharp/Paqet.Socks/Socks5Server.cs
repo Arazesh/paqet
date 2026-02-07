@@ -105,7 +105,7 @@ public sealed class Socks5Server
         {
             var frame = await UdpFrame.ReadAsync(tunnel, cancellationToken).ConfigureAwait(false);
             var datagram = frame.ToSocksDatagram();
-            await udpClient.SendAsync(datagram, datagram.Length, new IPEndPoint(IPAddress.Parse(frame.Address.Host), frame.Address.Port))
+            await udpClient.SendAsync(datagram, datagram.Length, new IPEndPoint(IPAddress.Parse(frame.Address.Host), frame.Address.Port), cancellationToken)
                 .ConfigureAwait(false);
         }
     }

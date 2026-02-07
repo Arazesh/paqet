@@ -71,7 +71,7 @@ Paqet.Server
 
 ## Current Scaffold State
 - `Paqet.Transport.Quic` is implemented using `System.Net.Quic` with self-signed certificates.
-- `Paqet.Transport.Kcp` currently delegates to QUIC until a managed KCP library is integrated.
+- `Paqet.Transport.Kcp` is implemented using a managed KCP library and is the default transport for the client/server runners.
 
 ## Initial Implementation Steps
 1. **Core types**: Address, ProtocolHeader, config parsing.

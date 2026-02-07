@@ -7,6 +7,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Paqet.Core\Paqet.Core.csproj" />
-    <ProjectReference Include="..\Paqet.Transport.Quic\Paqet.Transport.Quic.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KcpSharp" Version="1.7.0" />
   </ItemGroup>
 </Project>

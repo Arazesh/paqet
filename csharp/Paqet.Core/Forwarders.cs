@@ -18,6 +18,7 @@ public static class Forwarders
 
     private static async Task HandleTcpClientAsync(TcpClient client, Address target, Address server, ITransport transport, CancellationToken cancellationToken)
     {
+        await using var _ = client.ConfigureAwait(false);
         await using var connection = await transport.DialAsync(server, cancellationToken).ConfigureAwait(false);
         await using var tunnel = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
         await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForTcp(target), cancellationToken).ConfigureAwait(false);
@@ -57,7 +58,7 @@ public static class Forwarders
         while (!cancellationToken.IsCancellationRequested)
         {
             var frame = await UdpFrame.ReadAsync(tunnel, cancellationToken).ConfigureAwait(false);
-            await udp.SendAsync(frame.Payload.ToArray(), frame.Payload.Length, frame.Address.Host, frame.Address.Port).ConfigureAwait(false);
+            await udp.SendAsync(frame.Payload.ToArray(), frame.Payload.Length, frame.Address.Host, frame.Address.Port, cancellationToken).ConfigureAwait(false);
         }
     }
 

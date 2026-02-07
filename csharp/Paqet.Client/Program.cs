@@ -1,7 +1,7 @@
 using System.Net;
 using Paqet.Core;
 using Paqet.Socks;
-using Paqet.Transport.Quic;
+using Paqet.Transport.Kcp;
 
 namespace Paqet.Client;
 
@@ -16,7 +16,7 @@ internal static class Program
         }
 
         var mode = args[0].ToLowerInvariant();
-        var transport = new QuicTransport();
+        var transport = new KcpTransport();
 
         if (mode == "socks" && args.Length >= 3)
         {

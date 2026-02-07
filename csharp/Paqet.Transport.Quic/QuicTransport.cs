@@ -72,9 +72,10 @@ public sealed class QuicTransport : ITransport
             return new QuicConnectionAdapter(connection);
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
-            await _listener.DisposeAsync(); 
+            _listener.Dispose();
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -102,7 +103,7 @@ public sealed class QuicTransport : ITransport
         public async ValueTask DisposeAsync()
         {
             await _connection.CloseAsync(0).ConfigureAwait(false);
-            await _connection.DisposeAsync();
+            _connection.Dispose();
         }
     }
 
