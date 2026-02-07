@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Paqet.Core\Paqet.Core.csproj" />
+    <ProjectReference Include="..\Paqet.Socks\Paqet.Socks.csproj" />
+    <ProjectReference Include="..\Paqet.Transport.Kcp\Paqet.Transport.Kcp.csproj" />
+    <ProjectReference Include="..\Paqet.Transport.Quic\Paqet.Transport.Quic.csproj" />
+  </ItemGroup>
+</Project>
