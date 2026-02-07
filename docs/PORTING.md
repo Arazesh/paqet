@@ -70,7 +70,8 @@ Paqet.Server
 - **KCP**: managed library; if unavailable, fall back to QUIC (`MsQuic`).
 
 ## Current Scaffold State
-- `Paqet.Transport.Kcp` and `Paqet.Transport.Quic` delegate to a temporary TCP transport so the code path is runnable while KCP/QUIC are implemented.
+- `Paqet.Transport.Quic` is implemented using `System.Net.Quic` with self-signed certificates.
+- `Paqet.Transport.Kcp` currently delegates to QUIC until a managed KCP library is integrated.
 
 ## Initial Implementation Steps
 1. **Core types**: Address, ProtocolHeader, config parsing.

@@ -17,5 +17,14 @@ This folder contains the initial scaffold for a C# port of Paqet.
 
 ## Status
 - Core abstractions are present and usable.
-- KCP/QUIC transports currently delegate to a TCP fallback to avoid NotImplementedException.
-- Implementations are TODO; see `docs/PORTING.md` for the full plan.
+- QUIC transport is implemented; KCP transport delegates to QUIC until a managed KCP library is integrated.
+- Raw packet sender/receiver are available (requires elevated privileges).
+- `EthernetPacketSender` builds Ethernet frames using a gateway MAC via SharpPcap.
+
+## Usage
+```
+Paqet.Server <listenHost:port>
+
+Paqet.Client socks <listenHost:port> <serverHost:port>
+Paqet.Client forward <tcp|udp> <listenHost:port> <targetHost:port> <serverHost:port>
+```
