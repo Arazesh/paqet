@@ -1,0 +1,23 @@
+{
+  "version": "0.1",
+  "projects": [
+    {
+      "path": "csharp/Paqet.Core/Paqet.Core.csproj"
+    },
+    {
+      "path": "csharp/Paqet.Socks/Paqet.Socks.csproj"
+    },
+    {
+      "path": "csharp/Paqet.Transport.Kcp/Paqet.Transport.Kcp.csproj"
+    },
+    {
+      "path": "csharp/Paqet.Transport.Quic/Paqet.Transport.Quic.csproj"
+    },
+    {
+      "path": "csharp/Paqet.Client/Paqet.Client.csproj"
+    },
+    {
+      "path": "csharp/Paqet.Server/Paqet.Server.csproj"
+    }
+  ]
+}
