@@ -38,58 +38,40 @@ public sealed record UdpFrame(Address Address, ReadOnlyMemory<byte> Payload)
         return new UdpFrame(new Address(host, port), datagram.AsMemory(offset));
     }
 
-    public byte[] Serialize()
-    {
-        var hostBytes = System.Text.Encoding.UTF8.GetBytes(Address.Host);
-        var length = 1 + 1 + 2 + hostBytes.Length + Payload.Length;
-        var buffer = new byte[2 + length];
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(0, 2), (ushort)length);
-        var offset = 2;
-        buffer[offset++] = 0x03;
-        buffer[offset++] = (byte)hostBytes.Length;
-        hostBytes.CopyTo(buffer.AsSpan(offset));
-        offset += hostBytes.Length;
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset, 2), (ushort)Address.Port);
-        offset += 2;
-        Payload.Span.CopyTo(buffer.AsSpan(offset));
-        return buffer;
-    }
-
-    public static async ValueTask<UdpFrame> ReadAsync(IStream stream, CancellationToken cancellationToken = default)
-    {
-        var prefix = new byte[2];
-        await StreamHelpers.ReadExactAsync(stream, prefix, cancellationToken).ConfigureAwait(false);
-        var length = BinaryPrimitives.ReadUInt16BigEndian(prefix);
-        var payload = new byte[length];
-        await StreamHelpers.ReadExactAsync(stream, payload, cancellationToken).ConfigureAwait(false);
-        var offset = 0;
-        var atyp = payload[offset++];
-        if (atyp != 0x03)
-        {
-            throw new InvalidOperationException("Unsupported UDP frame encoding.");
-        }
-        var hostLen = payload[offset++];
-        var host = System.Text.Encoding.UTF8.GetString(payload, offset, hostLen);
-        offset += hostLen;
-        var port = BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(offset, 2));
-        offset += 2;
-        return new UdpFrame(new Address(host, port), payload.AsMemory(offset));
-    }
-
     public byte[] ToSocksDatagram()
     {
-        var hostBytes = System.Text.Encoding.ASCII.GetBytes(Address.Host);
-        var buffer = new byte[4 + 1 + hostBytes.Length + 2 + Payload.Length];
+        var buffer = new byte[4 + 1 + 255 + 2 + Payload.Length];
         buffer[0] = 0x00;
         buffer[1] = 0x00;
         buffer[2] = 0x00;
-        buffer[3] = 0x03;
-        buffer[4] = (byte)hostBytes.Length;
-        hostBytes.CopyTo(buffer.AsSpan(5));
-        var offset = 5 + hostBytes.Length;
+        var offset = 3;
+        if (System.Net.IPAddress.TryParse(Address.Host, out var ip))
+        {
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                buffer[offset++] = 0x01;
+                ip.GetAddressBytes().CopyTo(buffer.AsSpan(offset));
+                offset += 4;
+            }
+            else
+            {
+                buffer[offset++] = 0x04;
+                ip.GetAddressBytes().CopyTo(buffer.AsSpan(offset));
+                offset += 16;
+            }
+        }
+        else
+        {
+            var hostBytes = System.Text.Encoding.ASCII.GetBytes(Address.Host);
+            buffer[offset++] = 0x03;
+            buffer[offset++] = (byte)hostBytes.Length;
+            hostBytes.CopyTo(buffer.AsSpan(offset));
+            offset += hostBytes.Length;
+        }
+
         BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(offset, 2), (ushort)Address.Port);
         offset += 2;
         Payload.Span.CopyTo(buffer.AsSpan(offset));
-        return buffer;
+        return buffer.AsSpan(0, offset + Payload.Length).ToArray();
     }
 }

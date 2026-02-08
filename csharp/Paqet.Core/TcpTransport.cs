@@ -14,7 +14,7 @@ public sealed class TcpTransport : ITransport
 
     public ValueTask<IListener> ListenAsync(Address address, CancellationToken cancellationToken = default)
     {
-        var listener = new TcpListener(IPAddress.Parse(address.Host), address.Port);
+        var listener = new TcpListener(address.ResolveIPAddress(), address.Port);
         listener.Start();
         return ValueTask.FromResult<IListener>(new TcpListenerAdapter(listener));
     }

@@ -12,7 +12,7 @@ public sealed class KcpTransport : ITransport
 {
     public async ValueTask<IConnection> DialAsync(Address address, CancellationToken cancellationToken = default)
     {
-        var remote = new IPEndPoint(IPAddress.Parse(address.Host), address.Port);
+        var remote = new IPEndPoint(address.ResolveIPAddress(), address.Port);
         var localIp = ResolveLocalIPv4(remote.Address);
         var channel = new RawTcpPacketChannel(localIp, remote.Address, (ushort)remote.Port);
         var conv = (uint)Random.Shared.Next(1, int.MaxValue);
@@ -23,7 +23,7 @@ public sealed class KcpTransport : ITransport
 
     public async ValueTask<IListener> ListenAsync(Address address, CancellationToken cancellationToken = default)
     {
-        var listener = new KcpListener(IPAddress.Parse(address.Host), (ushort)address.Port);
+        var listener = new KcpListener(address.ResolveIPAddress(), (ushort)address.Port);
         listener.Start();
         return await ValueTask.FromResult<IListener>(listener);
     }

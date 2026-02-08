@@ -22,7 +22,7 @@ internal static class Program
         {
             var listen = Address.Parse(args[1]);
             var server = Address.Parse(args[2]);
-            var socks = new Socks5Server(new IPEndPoint(IPAddress.Parse(listen.Host), listen.Port), transport, server);
+            var socks = new Socks5Server(new IPEndPoint(listen.ResolveIPAddress(), listen.Port), transport, server);
             Console.WriteLine($"SOCKS5 listening on {listen} -> server {server}");
             await socks.StartAsync();
             return;

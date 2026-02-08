@@ -44,7 +44,7 @@ internal static class Program
         }
         else if (header.Type == Core.ProtocolType.Udp && header.Address is not null)
         {
-            await HandleUdpAsync(stream);
+            await HandleUdpAsync(stream, header.Address);
         }
     }
 
@@ -59,9 +59,10 @@ internal static class Program
         await Task.WhenAny(copyToTarget, copyToClient).ConfigureAwait(false);
     }
 
-    private static async Task HandleUdpAsync(IStream tunnel)
+    private static async Task HandleUdpAsync(IStream tunnel, Address target)
     {
         using var udp = new UdpClient(0);
+        udp.Connect(target.Host, target.Port);
         var receiveTask = RelayUdpToTunnelAsync(udp, tunnel);
         var sendTask = RelayTunnelToUdpAsync(udp, tunnel);
         await Task.WhenAny(receiveTask, sendTask).ConfigureAwait(false);
@@ -69,10 +70,16 @@ internal static class Program
 
     private static async Task RelayTunnelToUdpAsync(UdpClient udp, IStream tunnel)
     {
+        var buffer = new byte[1500];
         while (true)
         {
-            var frame = await UdpFrame.ReadAsync(tunnel).ConfigureAwait(false);
-            await udp.SendAsync(frame.Payload.ToArray(), frame.Payload.Length, frame.Address.Host, frame.Address.Port).ConfigureAwait(false);
+            var read = await tunnel.ReadAsync(buffer).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            await udp.SendAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
         }
     }
 
@@ -81,9 +88,7 @@ internal static class Program
         while (true)
         {
             var result = await udp.ReceiveAsync().ConfigureAwait(false);
-            var frame = new UdpFrame(new Address(result.RemoteEndPoint.Address.ToString(), result.RemoteEndPoint.Port), result.Buffer);
-            var data = frame.Serialize();
-            await tunnel.WriteAsync(data).ConfigureAwait(false);
+            await tunnel.WriteAsync(result.Buffer).ConfigureAwait(false);
         }
     }
 

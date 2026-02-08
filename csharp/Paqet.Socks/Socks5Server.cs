@@ -77,37 +77,60 @@ public sealed class Socks5Server
         await SendReplyAsync(stream, 0x00, request with { BoundAddress = new Address(local.Address.ToString(), local.Port) }, cancellationToken)
             .ConfigureAwait(false);
 
-        await using var connection = await _transport.DialAsync(_serverAddress, cancellationToken).ConfigureAwait(false);
-        await using var tunnel = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
-        await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForUdp(new Address(request.Address.Host, request.Address.Port)), cancellationToken)
-            .ConfigureAwait(false);
-
         var clientStream = new NetworkStreamAdapter(stream);
-        var udpToServer = RelayUdpToServerAsync(udpClient, tunnel, cancellationToken);
-        var serverToUdp = RelayServerToUdpAsync(udpClient, tunnel, cancellationToken);
-        var tcpHold = HoldTcpAsync(clientStream, cancellationToken);
-        await Task.WhenAny(udpToServer, serverToUdp, tcpHold).ConfigureAwait(false);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var tunnels = new Dictionary<string, UdpTunnel>();
+        var udpToServer = RelayUdpToServerAsync(udpClient, tunnels, cts.Token);
+        var tcpHold = HoldTcpAsync(clientStream, cts.Token);
+        await Task.WhenAny(udpToServer, tcpHold).ConfigureAwait(false);
+        cts.Cancel();
+        await CloseTunnelsAsync(tunnels).ConfigureAwait(false);
     }
 
-    private static async Task RelayUdpToServerAsync(UdpClient udpClient, IStream tunnel, CancellationToken cancellationToken)
+    private async Task RelayUdpToServerAsync(
+        UdpClient udpClient,
+        Dictionary<string, UdpTunnel> tunnels,
+        CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
             var result = await udpClient.ReceiveAsync(cancellationToken).ConfigureAwait(false);
             var frame = UdpFrame.FromSocksDatagram(result.Buffer);
-            var payload = frame.Serialize();
-            await tunnel.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            var key = $"{result.RemoteEndPoint}-{frame.Address}";
+            if (!tunnels.TryGetValue(key, out var tunnel))
+            {
+                tunnel = await CreateUdpTunnelAsync(udpClient, result.RemoteEndPoint, frame.Address, cancellationToken).ConfigureAwait(false);
+                tunnels[key] = tunnel;
+            }
+
+            await tunnel.Stream.WriteAsync(frame.Payload, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task RelayServerToUdpAsync(UdpClient udpClient, IStream tunnel, CancellationToken cancellationToken)
+    private static async Task RelayServerToUdpAsync(
+        UdpClient udpClient,
+        UdpTunnel tunnel,
+        CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var buffer = new byte[1500];
+        try
         {
-            var frame = await UdpFrame.ReadAsync(tunnel, cancellationToken).ConfigureAwait(false);
-            var datagram = frame.ToSocksDatagram();
-            await udpClient.SendAsync(datagram, datagram.Length, new IPEndPoint(IPAddress.Parse(frame.Address.Host), frame.Address.Port))
-                .ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var read = await tunnel.Stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                var response = new UdpFrame(tunnel.Target, buffer.AsMemory(0, read)).ToSocksDatagram();
+                await udpClient.SendAsync(response, response.Length, tunnel.ClientEndPoint).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await tunnel.Stream.DisposeAsync().ConfigureAwait(false);
+            await tunnel.Connection.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -190,6 +213,8 @@ public sealed class Socks5Server
 
     private sealed record SocksRequest(byte Command, Address Address, Address? BoundAddress);
 
+    private sealed record UdpTunnel(IConnection Connection, IStream Stream, IPEndPoint ClientEndPoint, Address Target);
+
     private sealed class NetworkStreamAdapter : IStream
     {
         private readonly NetworkStream _stream;
@@ -213,5 +238,29 @@ public sealed class Socks5Server
         {
             return ValueTask.CompletedTask;
         }
+    }
+
+    private async Task<UdpTunnel> CreateUdpTunnelAsync(
+        UdpClient udpClient,
+        IPEndPoint clientEndPoint,
+        Address target,
+        CancellationToken cancellationToken)
+    {
+        var connection = await _transport.DialAsync(_serverAddress, cancellationToken).ConfigureAwait(false);
+        var stream = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
+        await ProtocolHeader.WriteAsync(stream, ProtocolHeader.ForUdp(target), cancellationToken).ConfigureAwait(false);
+        var tunnel = new UdpTunnel(connection, stream, clientEndPoint, target);
+        _ = Task.Run(() => RelayServerToUdpAsync(udpClient, tunnel, cancellationToken), cancellationToken);
+        return tunnel;
+    }
+
+    private static async Task CloseTunnelsAsync(Dictionary<string, UdpTunnel> tunnels)
+    {
+        foreach (var tunnel in tunnels.Values)
+        {
+            await tunnel.Stream.DisposeAsync().ConfigureAwait(false);
+            await tunnel.Connection.DisposeAsync().ConfigureAwait(false);
+        }
+        tunnels.Clear();
     }
 }

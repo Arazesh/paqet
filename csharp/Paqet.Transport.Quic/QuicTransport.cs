@@ -30,7 +30,7 @@ public sealed class QuicTransport : ITransport
     {
         var listenerOptions = new QuicListenerOptions
         {
-            ListenEndPoint = new IPEndPoint(IPAddress.Parse(address.Host), address.Port),
+            ListenEndPoint = new IPEndPoint(address.ResolveIPAddress(), address.Port),
             ApplicationProtocols = new List<SslApplicationProtocol> { new(Alpn) },
             ConnectionOptionsCallback = (_, _, _) =>
             {

@@ -7,7 +7,7 @@ public static class Forwarders
 {
     public static async Task RunTcpForwardAsync(Address listen, Address target, Address server, ITransport transport, CancellationToken cancellationToken = default)
     {
-        var listener = new TcpListener(IPAddress.Parse(listen.Host), listen.Port);
+        var listener = new TcpListener(listen.ResolveIPAddress(), listen.Port);
         listener.Start();
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -33,35 +33,79 @@ public static class Forwarders
 
     public static async Task RunUdpForwardAsync(Address listen, Address target, Address server, ITransport transport, CancellationToken cancellationToken = default)
     {
-        using var udp = new UdpClient(new IPEndPoint(IPAddress.Parse(listen.Host), listen.Port));
-        await using var connection = await transport.DialAsync(server, cancellationToken).ConfigureAwait(false);
-        await using var tunnel = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
-        await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForUdp(target), cancellationToken).ConfigureAwait(false);
-
-        var fromClient = RelayUdpToTunnelAsync(udp, tunnel, cancellationToken);
-        var toClient = RelayTunnelToUdpAsync(udp, tunnel, cancellationToken);
-        await Task.WhenAny(fromClient, toClient).ConfigureAwait(false);
+        using var udp = new UdpClient(new IPEndPoint(listen.ResolveIPAddress(), listen.Port));
+        var tunnels = new Dictionary<string, UdpForwardTunnel>();
+        var fromClient = RelayUdpToTunnelAsync(udp, target, server, transport, tunnels, cancellationToken);
+        await fromClient.ConfigureAwait(false);
     }
 
-    private static async Task RelayUdpToTunnelAsync(UdpClient udp, IStream tunnel, CancellationToken cancellationToken)
+    private static async Task RelayUdpToTunnelAsync(
+        UdpClient udp,
+        Address target,
+        Address server,
+        ITransport transport,
+        Dictionary<string, UdpForwardTunnel> tunnels,
+        CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
             var result = await udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
-            var frame = new UdpFrame(new Address(result.RemoteEndPoint.Address.ToString(), result.RemoteEndPoint.Port), result.Buffer);
-            var data = frame.Serialize();
-            await tunnel.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+            var key = result.RemoteEndPoint.ToString();
+            if (!tunnels.TryGetValue(key, out var tunnel))
+            {
+                tunnel = await CreateForwardTunnelAsync(udp, result.RemoteEndPoint, target, server, transport, cancellationToken)
+                    .ConfigureAwait(false);
+                tunnels[key] = tunnel;
+            }
+
+            await tunnel.Stream.WriteAsync(result.Buffer, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task RelayTunnelToUdpAsync(UdpClient udp, IStream tunnel, CancellationToken cancellationToken)
+    private static async Task<UdpForwardTunnel> CreateForwardTunnelAsync(
+        UdpClient udp,
+        IPEndPoint clientEndPoint,
+        Address target,
+        Address server,
+        ITransport transport,
+        CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var connection = await transport.DialAsync(server, cancellationToken).ConfigureAwait(false);
+        var stream = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
+        await ProtocolHeader.WriteAsync(stream, ProtocolHeader.ForUdp(target), cancellationToken).ConfigureAwait(false);
+        _ = Task.Run(() => RelayTunnelToUdpAsync(udp, stream, clientEndPoint, connection, cancellationToken), cancellationToken);
+        return new UdpForwardTunnel(connection, stream, clientEndPoint);
+    }
+
+    private static async Task RelayTunnelToUdpAsync(
+        UdpClient udp,
+        IStream tunnel,
+        IPEndPoint clientEndPoint,
+        IConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[1500];
+        try
         {
-            var frame = await UdpFrame.ReadAsync(tunnel, cancellationToken).ConfigureAwait(false);
-            await udp.SendAsync(frame.Payload.ToArray(), frame.Payload.Length, frame.Address.Host, frame.Address.Port).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var read = await tunnel.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                await udp.SendAsync(buffer.AsMemory(0, read), clientEndPoint, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            await tunnel.DisposeAsync().ConfigureAwait(false);
+            await connection.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    private sealed record UdpForwardTunnel(IConnection Connection, IStream Stream, IPEndPoint ClientEndPoint);
 
     private sealed class NetworkStreamAdapter : IStream
     {
