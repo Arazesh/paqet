@@ -7,10 +7,17 @@ namespace Paqet.Socket;
 
 public sealed class RawPacketSender : IDisposable
 {
-    private readonly System.Net.Sockets.Socket _socket;
+    private readonly System.Net.Sockets.Socket? _socket;
+    private readonly EthernetPacketSender? _ethernetSender;
 
     public RawPacketSender(IPAddress sourceAddress)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            _ethernetSender = BuildWindowsEthernetSender(sourceAddress);
+            return;
+        }
+
         _socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.HeaderIncluded, true);
         _ = sourceAddress;
@@ -18,17 +25,29 @@ public sealed class RawPacketSender : IDisposable
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpFlags flags, uint seq, uint ack, ReadOnlySpan<byte> payload)
     {
+        if (_ethernetSender != null)
+        {
+            _ethernetSender.Send(destination, sourcePort, destPort, flags, seq, ack, payload);
+            return;
+        }
+
         var options = BuildTimestampOptions(0, 0);
         var tcpHeaderLength = 20 + options.Length;
         var buffer = new byte[20 + tcpHeaderLength + payload.Length];
         WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
         WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
         payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
-        _socket.SendTo(buffer, new IPEndPoint(destination, 0));
+        _socket!.SendTo(buffer, new IPEndPoint(destination, 0));
     }
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpPacketState state, ReadOnlySpan<byte> payload)
     {
+        if (_ethernetSender != null)
+        {
+            _ethernetSender.Send(destination, sourcePort, destPort, state, payload);
+            return;
+        }
+
         var (seq, ack, ts, flags) = state.Next(payload.Length);
         var options = BuildTimestampOptions(ts, ts);
         var tcpHeaderLength = 20 + options.Length;
@@ -36,7 +55,7 @@ public sealed class RawPacketSender : IDisposable
         WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
         WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
         payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
-        _socket.SendTo(buffer, new IPEndPoint(destination, 0));
+        _socket!.SendTo(buffer, new IPEndPoint(destination, 0));
     }
 
     private static void WriteIPv4Header(Span<byte> header, IPAddress source, IPAddress destination, int totalLength)
@@ -131,6 +150,30 @@ public sealed class RawPacketSender : IDisposable
 
     public void Dispose()
     {
-        _socket.Dispose();
+        _socket?.Dispose();
+        _ethernetSender?.Dispose();
+    }
+
+    private static EthernetPacketSender BuildWindowsEthernetSender(IPAddress sourceAddress)
+    {
+        var deviceName = Environment.GetEnvironmentVariable("PAQET_PCAP_DEVICE");
+        var sourceMacRaw = Environment.GetEnvironmentVariable("PAQET_SOURCE_MAC");
+        var gatewayMacRaw = Environment.GetEnvironmentVariable("PAQET_GATEWAY_MAC");
+        if (string.IsNullOrWhiteSpace(deviceName) || string.IsNullOrWhiteSpace(sourceMacRaw) || string.IsNullOrWhiteSpace(gatewayMacRaw))
+        {
+            throw new PlatformNotSupportedException(
+                "Windows does not allow sending crafted TCP packets with raw sockets. " +
+                "Set PAQET_PCAP_DEVICE, PAQET_SOURCE_MAC, and PAQET_GATEWAY_MAC to enable Npcap injection.");
+        }
+
+        var sourceMac = ParseMacAddress(sourceMacRaw);
+        var gatewayMac = ParseMacAddress(gatewayMacRaw);
+        return new EthernetPacketSender(deviceName, sourceAddress, sourceMac, gatewayMac);
+    }
+
+    private static System.Net.NetworkInformation.PhysicalAddress ParseMacAddress(string value)
+    {
+        var cleaned = value.Replace(":", string.Empty).Replace("-", string.Empty);
+        return System.Net.NetworkInformation.PhysicalAddress.Parse(cleaned);
     }
 }
