@@ -46,7 +46,7 @@ public sealed class EthernetPacketSender : IDisposable
             PayloadPacket = ip
         };
 
-        tcp.UpdateCalculatedValues();
+        tcp.UpdateTcpChecksum(ip);
         ip.UpdateCalculatedValues();
         eth.UpdateCalculatedValues();
 
