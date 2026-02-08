@@ -24,7 +24,7 @@ public sealed class RawPacketSender : IDisposable
         WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
         WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
         payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
-        _socket.SendTo(buffer, new IPEndPoint(destination, destPort));
+        _socket.SendTo(buffer, new IPEndPoint(destination, 0));
     }
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpPacketState state, ReadOnlySpan<byte> payload)
@@ -36,7 +36,7 @@ public sealed class RawPacketSender : IDisposable
         WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
         WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
         payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
-        _socket.SendTo(buffer, new IPEndPoint(destination, destPort));
+        _socket.SendTo(buffer, new IPEndPoint(destination, 0));
     }
 
     private static void WriteIPv4Header(Span<byte> header, IPAddress source, IPAddress destination, int totalLength)
