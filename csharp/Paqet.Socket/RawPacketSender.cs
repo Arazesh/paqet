@@ -7,21 +7,35 @@ namespace Paqet.Socket;
 
 public sealed class RawPacketSender : IDisposable
 {
-    private readonly Socket _socket;
+    private readonly System.Net.Sockets.Socket _socket;
 
     public RawPacketSender(IPAddress sourceAddress)
     {
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Tcp);
+        _socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
         _socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.HeaderIncluded, true);
-        _socket.Bind(new IPEndPoint(sourceAddress, 0));
+        _ = sourceAddress;
     }
 
     public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpFlags flags, uint seq, uint ack, ReadOnlySpan<byte> payload)
     {
-        var buffer = new byte[20 + 20 + payload.Length];
-        WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + 20 + payload.Length);
-        WriteTcpHeader(buffer.AsSpan(20, 20), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length);
-        payload.CopyTo(buffer.AsSpan(40));
+        var options = BuildTimestampOptions(0, 0);
+        var tcpHeaderLength = 20 + options.Length;
+        var buffer = new byte[20 + tcpHeaderLength + payload.Length];
+        WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
+        WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
+        payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
+        _socket.SendTo(buffer, new IPEndPoint(destination, destPort));
+    }
+
+    public void Send(IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpPacketState state, ReadOnlySpan<byte> payload)
+    {
+        var (seq, ack, ts, flags) = state.Next(payload.Length);
+        var options = BuildTimestampOptions(ts, ts);
+        var tcpHeaderLength = 20 + options.Length;
+        var buffer = new byte[20 + tcpHeaderLength + payload.Length];
+        WriteIPv4Header(buffer.AsSpan(0, 20), source, destination, 20 + tcpHeaderLength + payload.Length);
+        WriteTcpHeader(buffer.AsSpan(20, tcpHeaderLength), source, destination, sourcePort, destPort, flags, seq, ack, payload.Length, options);
+        payload.CopyTo(buffer.AsSpan(20 + tcpHeaderLength));
         _socket.SendTo(buffer, new IPEndPoint(destination, destPort));
     }
 
@@ -42,17 +56,21 @@ public sealed class RawPacketSender : IDisposable
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(10, 2), checksum);
     }
 
-    private static void WriteTcpHeader(Span<byte> header, IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpFlags flags, uint seq, uint ack, int payloadLength)
+    private static void WriteTcpHeader(Span<byte> header, IPAddress source, IPAddress destination, ushort sourcePort, ushort destPort, TcpFlags flags, uint seq, uint ack, int payloadLength, ReadOnlySpan<byte> options)
     {
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(0, 2), sourcePort);
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(2, 2), destPort);
         BinaryPrimitives.WriteUInt32BigEndian(header.Slice(4, 4), seq);
         BinaryPrimitives.WriteUInt32BigEndian(header.Slice(8, 4), ack);
-        header[12] = 0x50;
+        header[12] = (byte)((header.Length / 4) << 4);
         header[13] = BuildFlags(flags);
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(14, 2), 65535);
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(16, 2), 0);
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(18, 2), 0);
+        if (!options.IsEmpty)
+        {
+            options.CopyTo(header.Slice(20));
+        }
 
         var pseudo = new byte[12 + header.Length + payloadLength];
         source.GetAddressBytes().CopyTo(pseudo.AsSpan(0, 4));
@@ -63,6 +81,18 @@ public sealed class RawPacketSender : IDisposable
         header.CopyTo(pseudo.AsSpan(12, header.Length));
         var checksum = ComputeChecksum(pseudo);
         BinaryPrimitives.WriteUInt16BigEndian(header.Slice(16, 2), checksum);
+    }
+
+    private static byte[] BuildTimestampOptions(uint tsVal, uint tsEcr)
+    {
+        var options = new byte[12];
+        options[0] = 1;
+        options[1] = 1;
+        options[2] = 8;
+        options[3] = 10;
+        BinaryPrimitives.WriteUInt32BigEndian(options.AsSpan(4, 4), tsVal);
+        BinaryPrimitives.WriteUInt32BigEndian(options.AsSpan(8, 4), tsEcr);
+        return options;
     }
 
     private static byte BuildFlags(TcpFlags flags)

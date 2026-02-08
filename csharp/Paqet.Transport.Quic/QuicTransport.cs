@@ -74,7 +74,7 @@ public sealed class QuicTransport : ITransport
 
         public async ValueTask DisposeAsync()
         {
-            await _listener.DisposeAsync(); 
+            await _listener.DisposeAsync();
         }
     }
 

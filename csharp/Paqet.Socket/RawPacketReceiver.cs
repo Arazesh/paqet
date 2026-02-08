@@ -5,12 +5,12 @@ namespace Paqet.Socket;
 
 public sealed class RawPacketReceiver : IDisposable
 {
-    private readonly Socket _socket;
+    private readonly System.Net.Sockets.Socket _socket;
 
     public RawPacketReceiver(IPAddress listenAddress)
     {
-        _socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.Tcp);
-        _socket.Bind(new IPEndPoint(listenAddress, 0));
+        _socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Raw, System.Net.Sockets.ProtocolType.Tcp);
+        _ = listenAddress;
     }
 
     public int Receive(Span<byte> buffer)

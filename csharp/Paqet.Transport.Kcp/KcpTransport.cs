@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Threading.Channels;
 using KcpSharp;
 using Paqet.Core;
+using Paqet.Socket;
 
 namespace Paqet.Transport.Kcp;
 
@@ -11,32 +12,34 @@ public sealed class KcpTransport : ITransport
 {
     public async ValueTask<IConnection> DialAsync(Address address, CancellationToken cancellationToken = default)
     {
-        var udp = new UdpClient(0);
         var remote = new IPEndPoint(IPAddress.Parse(address.Host), address.Port);
+        var localIp = ResolveLocalIPv4(remote.Address);
+        var channel = new RawTcpPacketChannel(localIp, remote.Address, (ushort)remote.Port);
         var conv = (uint)Random.Shared.Next(1, int.MaxValue);
-        var session = new KcpSession(conv, udp, remote);
+        var session = new KcpSession(conv, channel);
         session.Start();
         return await ValueTask.FromResult<IConnection>(new KcpConnection(session));
     }
 
     public async ValueTask<IListener> ListenAsync(Address address, CancellationToken cancellationToken = default)
     {
-        var udp = new UdpClient(new IPEndPoint(IPAddress.Parse(address.Host), address.Port));
-        var listener = new KcpListener(udp);
+        var listener = new KcpListener(IPAddress.Parse(address.Host), (ushort)address.Port);
         listener.Start();
         return await ValueTask.FromResult<IListener>(listener);
     }
 
     private sealed class KcpListener : IListener
     {
-        private readonly UdpClient _udp;
+        private readonly IPAddress _listenAddress;
+        private readonly ushort _listenPort;
         private readonly Channel<IConnection> _accept = Channel.CreateUnbounded<IConnection>();
         private readonly Dictionary<uint, KcpSession> _sessions = new();
         private readonly CancellationTokenSource _cts = new();
 
-        public KcpListener(UdpClient udp)
+        public KcpListener(IPAddress listenAddress, ushort listenPort)
         {
-            _udp = udp;
+            _listenAddress = listenAddress;
+            _listenPort = listenPort;
         }
 
         public void Start()
@@ -53,27 +56,31 @@ public sealed class KcpTransport : ITransport
         {
             while (!_cts.IsCancellationRequested)
             {
-                var result = await _udp.ReceiveAsync(_cts.Token).ConfigureAwait(false);
-                if (result.Buffer.Length < 4)
+                var channel = new RawTcpPacketChannel(_listenAddress, _listenPort);
+                var result = await channel.ReceiveAsync(_cts.Token).ConfigureAwait(false);
+                if (result.Payload.Length < 4)
                 {
                     continue;
                 }
-                var conv = BinaryPrimitives.ReadUInt32LittleEndian(result.Buffer.AsSpan(0, 4));
+                var conv = BinaryPrimitives.ReadUInt32LittleEndian(result.Payload.AsSpan(0, 4));
                 if (!_sessions.TryGetValue(conv, out var session))
                 {
-                    session = new KcpSession(conv, _udp, result.RemoteEndPoint);
+                    var peer = result.Source;
+                    var peerPort = result.SourcePort;
+                    var localIp = ResolveLocalIPv4(peer);
+                    var sessionChannel = new RawTcpPacketChannel(localIp, peer, peerPort);
+                    session = new KcpSession(conv, sessionChannel);
                     session.Start();
                     _sessions[conv] = session;
                     _accept.Writer.TryWrite(new KcpConnection(session));
                 }
-                session.Input(result.Buffer);
+                session.Input(result.Payload);
             }
         }
 
         public ValueTask DisposeAsync()
         {
             _cts.Cancel();
-            _udp.Dispose();
             return ValueTask.CompletedTask;
         }
     }
@@ -153,20 +160,18 @@ public sealed class KcpTransport : ITransport
 
     private sealed class KcpSession : IDisposable
     {
-        private readonly Kcp _kcp;
-        private readonly UdpClient _udp;
-        private readonly IPEndPoint _remote;
+        private readonly KcpSharp.Kcp _kcp;
+        private readonly RawTcpPacketChannel _channel;
         private readonly Channel<byte[]> _recv = Channel.CreateUnbounded<byte[]>();
         private readonly CancellationTokenSource _cts = new();
         private readonly object _sync = new();
         private Task? _updateLoop;
         private Task? _recvLoop;
 
-        public KcpSession(uint conv, UdpClient udp, IPEndPoint remote)
+        public KcpSession(uint conv, RawTcpPacketChannel channel)
         {
-            _udp = udp;
-            _remote = remote;
-            _kcp = new Kcp(conv, Output);
+            _channel = channel;
+            _kcp = new KcpSharp.Kcp(conv, Output);
             _kcp.NoDelay(1, 10, 2, 1);
             _kcp.WndSize(128, 128);
         }
@@ -209,19 +214,15 @@ public sealed class KcpTransport : ITransport
 
         private void Output(byte[] buffer, int size)
         {
-            _udp.Send(buffer, size, _remote);
+            _channel.Send(buffer.AsSpan(0, size));
         }
 
         private async Task ReceiveLoopAsync()
         {
             while (!_cts.IsCancellationRequested)
             {
-                var result = await _udp.ReceiveAsync(_cts.Token).ConfigureAwait(false);
-                if (!result.RemoteEndPoint.Equals(_remote))
-                {
-                    continue;
-                }
-                Input(result.Buffer);
+                var result = await _channel.ReceiveAsync(_cts.Token).ConfigureAwait(false);
+                Input(result.Payload);
             }
         }
 
@@ -262,6 +263,103 @@ public sealed class KcpTransport : ITransport
         public void Dispose()
         {
             _cts.Cancel();
+        }
+    }
+
+    private static IPAddress ResolveLocalIPv4(IPAddress remote)
+    {
+        using var socket = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
+        socket.Connect(new IPEndPoint(remote, 9));
+        return ((IPEndPoint)socket.LocalEndPoint!).Address;
+    }
+
+    private sealed class RawTcpPacketChannel : IDisposable
+    {
+        private readonly RawPacketSender _sender;
+        private readonly RawPacketReceiver _receiver;
+        private readonly TcpPacketState _state = new();
+        private readonly IPAddress _source;
+        private readonly IPAddress _destination;
+        private readonly ushort _destinationPort;
+        private readonly ushort _listenPort;
+
+        public RawTcpPacketChannel(IPAddress source, ushort listenPort = 0)
+        {
+            _source = source;
+            _destination = IPAddress.Any;
+            _destinationPort = 0;
+            _listenPort = listenPort;
+            _sender = new RawPacketSender(source);
+            _receiver = new RawPacketReceiver(source);
+        }
+
+        public RawTcpPacketChannel(IPAddress source, IPAddress destination, ushort destinationPort)
+        {
+            _source = source;
+            _destination = destination;
+            _destinationPort = destinationPort;
+            _listenPort = 0;
+            _sender = new RawPacketSender(source);
+            _receiver = new RawPacketReceiver(source);
+        }
+
+        public void Send(ReadOnlySpan<byte> payload)
+        {
+            if (_destinationPort == 0 || IPAddress.Any.Equals(_destination) || IPAddress.Any.Equals(_source))
+            {
+                return;
+            }
+            _sender.Send(_source, _destination, 40000, _destinationPort, _state, payload);
+        }
+
+        public async ValueTask<(IPAddress Source, ushort SourcePort, byte[] Payload)> ReceiveAsync(CancellationToken cancellationToken)
+        {
+            var buffer = new byte[1500];
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var count = _receiver.Receive(buffer);
+                if (count <= 0)
+                {
+                    await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+                if (count < 40)
+                {
+                    continue;
+                }
+                var ipHeaderLen = (buffer[0] & 0x0F) * 4;
+                if (buffer[9] != 6 || count < ipHeaderLen + 20)
+                {
+                    continue;
+                }
+                var tcpOffset = ipHeaderLen;
+                var dstPort = (ushort)((buffer[tcpOffset + 2] << 8) | buffer[tcpOffset + 3]);
+                if (_listenPort != 0 && dstPort != _listenPort)
+                {
+                    continue;
+                }
+                var dataOffset = (buffer[tcpOffset + 12] >> 4) * 4;
+                var payloadOffset = tcpOffset + dataOffset;
+                if (payloadOffset > count)
+                {
+                    continue;
+                }
+                var srcIp = new IPAddress(buffer.AsSpan(12, 4));
+                var srcPort = (ushort)((buffer[tcpOffset] << 8) | buffer[tcpOffset + 1]);
+                if (srcPort == 0)
+                {
+                    continue;
+                }
+                var payload = buffer.AsSpan(payloadOffset, count - payloadOffset).ToArray();
+                return (srcIp, srcPort, payload);
+            }
+            return (IPAddress.Any, 0, Array.Empty<byte>());
+        }
+
+        public void Dispose()
+        {
+            _sender.Dispose();
+            _receiver.Dispose();
         }
     }
 }

@@ -61,6 +61,7 @@ public sealed class Socks5Server
         await SendReplyAsync(stream, 0x00, request, cancellationToken).ConfigureAwait(false);
         await using var connection = await _transport.DialAsync(_serverAddress, cancellationToken).ConfigureAwait(false);
         await using var tunnel = await connection.OpenStreamAsync(cancellationToken).ConfigureAwait(false);
+        await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForTcpFlags(new[] { TcpFlagPresets.PshAck }), cancellationToken).ConfigureAwait(false);
         await ProtocolHeader.WriteAsync(tunnel, ProtocolHeader.ForTcp(request.Address), cancellationToken).ConfigureAwait(false);
 
         var clientStream = new NetworkStreamAdapter(stream);
