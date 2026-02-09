@@ -171,10 +171,8 @@ public sealed class KcpTransport : ITransport
         public KcpSession(uint conv, RawTcpPacketChannel channel)
         {
             _channel = channel;
-            _kcp = new KcpIO(conv)
-            {
-                Output = Output
-            };
+            _kcp = new PoolSegManager.KcpIO(conv);
+            _kcp.Output = Output;
             _kcp.Kcp.NoDelay(1, 10, 2, 1);
             _kcp.Kcp.WndSize(128, 128);
         }
