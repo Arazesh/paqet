@@ -11,6 +11,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="kcp2k" Version="1.1.30" />
+    <PackageReference Include="Kcp-CSharp" Version="1.0.8" />
   </ItemGroup>
 </Project>
