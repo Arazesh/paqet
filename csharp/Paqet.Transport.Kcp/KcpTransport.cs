@@ -160,7 +160,7 @@ public sealed class KcpTransport : ITransport
 
     private sealed class KcpSession : IDisposable
     {
-        private readonly KcpIO _kcp;
+        private readonly PoolSegManager.KcpIO _kcp;
         private readonly RawTcpPacketChannel _channel;
         private readonly Channel<byte[]> _recv = Channel.CreateUnbounded<byte[]>();
         private readonly CancellationTokenSource _cts = new();
@@ -173,8 +173,8 @@ public sealed class KcpTransport : ITransport
             _channel = channel;
             _kcp = new PoolSegManager.KcpIO(conv);
             _kcp.Output = Output;
-            _kcp.Kcp.NoDelay(1, 10, 2, 1);
-            _kcp.Kcp.WndSize(128, 128);
+            _kcp.NoDelay(1, 10, 2, 1);
+            _kcp.WndSize(128, 128);
         }
 
         public void Start()
@@ -187,7 +187,7 @@ public sealed class KcpTransport : ITransport
         {
             lock (_sync)
             {
-                _kcp.Kcp.Input(data);
+                _kcp.Input(data);
             }
             Drain();
         }
@@ -199,7 +199,7 @@ public sealed class KcpTransport : ITransport
             data.CopyTo(payload.AsMemory(2));
             lock (_sync)
             {
-                _kcp.Kcp.Send(payload);
+                _kcp.Send(payload);
             }
             await Task.Yield();
         }
@@ -233,7 +233,7 @@ public sealed class KcpTransport : ITransport
             {
                 lock (_sync)
                 {
-                    _kcp.Kcp.Update(unchecked((uint)Environment.TickCount64));
+                    _kcp.Update(unchecked((uint)Environment.TickCount64));
                 }
                 await Task.Delay(10, _cts.Token).ConfigureAwait(false);
             }
@@ -246,13 +246,13 @@ public sealed class KcpTransport : ITransport
                 int size;
                 lock (_sync)
                 {
-                    size = _kcp.Kcp.PeekSize();
+                    size = _kcp.PeekSize();
                     if (size <= 0)
                     {
                         return;
                     }
                     var buffer = new byte[size];
-                    var n = _kcp.Kcp.Receive(buffer);
+                    var n = _kcp.Receive(buffer);
                     if (n > 0)
                     {
                         _recv.Writer.TryWrite(buffer);
