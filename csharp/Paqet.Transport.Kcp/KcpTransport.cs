@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
-using KcpSharp;
+using Kcp = global::Kcp.Kcp;
 using Paqet.Core;
 using Paqet.Socket;
 
