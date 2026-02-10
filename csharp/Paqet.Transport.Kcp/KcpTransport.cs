@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
-using KcpSharp;
+using PoolSegManager;
 using Paqet.Core;
 using Paqet.Socket;
 
@@ -160,7 +160,7 @@ public sealed class KcpTransport : ITransport
 
     private sealed class KcpSession : IDisposable
     {
-        private readonly KcpSharp.Kcp _kcp;
+        private readonly PoolSegManager.KcpIO _kcp;
         private readonly RawTcpPacketChannel _channel;
         private readonly Channel<byte[]> _recv = Channel.CreateUnbounded<byte[]>();
         private readonly CancellationTokenSource _cts = new();
@@ -171,7 +171,8 @@ public sealed class KcpTransport : ITransport
         public KcpSession(uint conv, RawTcpPacketChannel channel)
         {
             _channel = channel;
-            _kcp = new KcpSharp.Kcp(conv, Output);
+            _kcp = new PoolSegManager.KcpIO(conv);
+            _kcp.Output = Output;
             _kcp.NoDelay(1, 10, 2, 1);
             _kcp.WndSize(128, 128);
         }
@@ -232,7 +233,7 @@ public sealed class KcpTransport : ITransport
             {
                 lock (_sync)
                 {
-                    _kcp.Update(Environment.TickCount64);
+                    _kcp.Update(unchecked((uint)Environment.TickCount64));
                 }
                 await Task.Delay(10, _cts.Token).ConfigureAwait(false);
             }
